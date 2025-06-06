@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lowe's UPC URL Generator</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f4f8fb;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: row;
+    }
+    .sidebar {
+      width: 250px;
+      background: #003366;
+      color: white;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .sidebar h2 {
+      font-size: 20px;
+      border-bottom: 1px solid #ffffff33;
+      padding-bottom: 10px;
+      margin-bottom: 20px;
+    }
+    .sidebar p {
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .container {
+      flex: 1;
+      padding: 40px;
+      background: #f9f9f9;
+    }
+    h1 {
+      text-align: center;
+      color: #003366;
+    }
+    textarea, input[type="file"], input[type="checkbox"] {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0 20px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+    }
+    button {
+      background-color: #003366;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      margin: 5px 10px 5px 0;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #0055a5;
+    }
+    .danger {
+      background-color: #b30000;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background-color: #003366;
+      color: white;
+    }
+    td a {
+      color: #003366;
+      text-decoration: none;
+    }
+    #historySection {
+      margin-top: 40px;
+    }
+    .history-entry {
+      background: #f0f0f0;
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Info Panel</h2>
+    <p>✅ Paste or upload UPCs<br>✅ Generate Lowe's URLs<br>✅ Copy or export links<br>✅ Tracks history</p>
+    <p>💡 Tip: You can drop a `.csv` file directly into the browser window!</p>
+  </div>
+
+  <div class="container">
+    <h1>Lowe's UPC URL Generator</h1>
+
+    <label for="productList">Enter UPCs (one per line):</label>
+    <textarea id="productList" rows="10" placeholder="e.g.&#10;012345678912&#10;036000291452"></textarea>
+
+    <label for="fileUpload">Or drag and drop a CSV file:</label>
+    <input type="file" id="fileUpload" accept=".csv,.txt" />
+
+    <div style="margin-top: 20px;">
+      <button onclick="generateURLs()">Generate URLs</button>
+      <button class="danger" onclick="clearHistory()">Clear History</button>
+      <button onclick="copyURLsToClipboard()">Copy All URLs</button>
+      <button onclick="exportCSV()">Export as CSV</button>
+    </div>
+
+    <div id="resultsContainer"></div>
+
+    <div id="historySection">
+      <h2>History</h2>
+      <div id="historyContent"></div>
+    </div>
+  </div>
+
+  <script>
+    function generateURLs() {
+      const productList = document.getElementById("productList").value.trim().split(/\r?\n/).filter(Boolean);
+      if (productList.length === 0) {
+        alert("Please enter at least one UPC.");
+        return;
+      }
+
+      let resultHTML = `<table><thead><tr><th>UPC</th><th>Lowe's</th></tr></thead><tbody>`;
+      const timestamp = new Date().toLocaleString();
+      const historyEntry = { timestamp, productList, results: [], allUrls: [] };
+
+      productList.forEach(upc => {
+        const url = `https://www.lowes.com/search/?searchTerm=${upc}`;
+        historyEntry.allUrls.push(url);
+        historyEntry.results.push({ upc, url });
+        resultHTML += `<tr><td>${upc}</td><td><a href="${url}" target="_blank">View</a></td></tr>`;
+      });
+
+      resultHTML += `</tbody></table>`;
+      document.getElementById("resultsContainer").innerHTML = resultHTML;
+      saveToHistory(historyEntry);
+    }
+
+    function copyURLsToClipboard() {
+      const urls = getCurrentURLs();
+      if (urls.length === 0) {
+        alert("No URLs to copy.");
+        return;
+      }
+      navigator.clipboard.writeText(urls.join('\n')).then(() => alert("Copied to clipboard!"));
+    }
+
+    function exportCSV() {
+      const urls = getCurrentURLs();
+      if (urls.length === 0) {
+        alert("No URLs to export.");
+        return;
+      }
+      const csv = "UPC,URL\n" + urls.map(url => {
+        const upc = url.split("searchTerm=")[1];
+        return `${upc},${url}`;
+      }).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "lowes_upc_links.csv";
+      link.click();
+    }
+
+    function getCurrentURLs() {
+      const links = document.querySelectorAll("#resultsContainer table tbody a");
+      return Array.from(links).map(link => link.href);
+    }
+
+    function saveToHistory(entry) {
+      let history = JSON.parse(localStorage.getItem("lowesUpcHistory") || "[]");
+      history.unshift(entry);
+      localStorage.setItem("lowesUpcHistory", JSON.stringify(history));
+      displayHistory();
+    }
+
+    function displayHistory() {
+      const container = document.getElementById("historyContent");
+      const history = JSON.parse(localStorage.getItem("lowesUpcHistory") || "[]");
+      if (history.length === 0) {
+        container.innerHTML = "<p>No history yet.</p>";
+        return;
+      }
+      container.innerHTML = "";
+      history.forEach(entry => {
+        let html = `<div class="history-entry"><strong>${entry.timestamp}</strong><ul>`;
+        entry.results.forEach(row => {
+          html += `<li>${row.upc}: <a href="${row.url}" target="_blank">Lowe's</a></li>`;
+        });
+        html += `</ul></div>`;
+        container.innerHTML += html;
+      });
+    }
+
+    function clearHistory() {
+      if (confirm("Clear all history?")) {
+        localStorage.removeItem("lowesUpcHistory");
+        displayHistory();
+      }
+    }
+
+    document.getElementById("fileUpload").addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(evt) {
+        const lines = evt.target.result.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+        document.getElementById("productList").value = lines.join('\n');
+      };
+      reader.readAsText(file);
+    });
+
+    displayHistory();
+  </script>
+</body>
+</html>
